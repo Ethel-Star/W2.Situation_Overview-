@@ -292,22 +292,26 @@ class DataUtils:
 
         plt.tight_layout()
         plt.show()
-    def cluster_analysis(self, columns_to_scale, max_k=10, n_clusters=None):
-
+    def cluster_analysis(self, columns_to_scale, max_k=10, n_clusters=None, use_mini_batch=False):
+    
         # Preprocess the data
         scaler = StandardScaler()
         scaled_data = scaler.fit_transform(self.df[columns_to_scale])
-        
+
+        # Optionally apply PCA for dimensionality reduction
+        pca = PCA(n_components=min(len(columns_to_scale), 2))
+        reduced_data = pca.fit_transform(scaled_data)
+
         if n_clusters is None:
             # Find optimal k
             k_values = range(1, max_k + 1)
             inertia = []
-            
+
             for k in k_values:
-                kmeans = KMeans(n_clusters=k, random_state=42)
-                kmeans.fit(scaled_data)
+                kmeans = MiniBatchKMeans(n_clusters=k, random_state=42) if use_mini_batch else KMeans(n_clusters=k, random_state=42)
+                kmeans.fit(reduced_data)
                 inertia.append(kmeans.inertia_)
-            
+
             plt.figure(figsize=(8, 6))
             plt.plot(k_values, inertia, marker='o')
             plt.xlabel('Number of Clusters (k)')
@@ -320,15 +324,15 @@ class DataUtils:
             optimal_k = int(input("Enter the optimal number of clusters (k): "))
         else:
             optimal_k = n_clusters
-        
-        # Apply k-means clustering
-        kmeans = KMeans(n_clusters=optimal_k, random_state=42)
-        clusters = kmeans.fit_predict(scaled_data)
-        
+
+        # Apply k-means or MiniBatchKMeans clustering
+        kmeans = MiniBatchKMeans(n_clusters=optimal_k, random_state=42) if use_mini_batch else KMeans(n_clusters=optimal_k, random_state=42)
+        clusters = kmeans.fit_predict(reduced_data)
+
         # Add cluster labels to the DataFrame
         self.df['Cluster'] = clusters
-        
+
         # Summarize cluster statistics
         cluster_summary = self.df.groupby('Cluster')[columns_to_scale].mean()
-        
+
         return self.df, cluster_summary, optimal_k
