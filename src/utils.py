@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 class DataUtils:
     def __init__(self, df):
@@ -136,97 +137,92 @@ class DataUtils:
         
         return stats_summary
 
-    def plot_univariate_analysis(self, variables):
-        """Create and display histograms for specified quantitative variables."""
-        num_vars = len(variables)
-        num_cols = 4
-        num_rows = int(np.ceil(num_vars / num_cols))  # Calculate number of rows needed
+    def analyze_customer_engagement(self):
+        """Analyze customer engagement metrics and return top 10 customers by various metrics."""
+        self.df.rename(columns={
+            'MSISDN/Number': 'MSISDN',
+            'Dur. (ms)': 'Session_duration',
+            'Total DL (Bytes)': 'DL_data',
+            'Total UL (Bytes)': 'UL_data'
+        }, inplace=True)
 
-        colors = sns.color_palette("husl", num_vars)  # Generate a color palette with distinct colors
+        # Group by MSISDN and aggregate the necessary columns
+        user_engagement = self.df.groupby('MSISDN').agg({
+            'MSISDN': 'count',                # Number of sessions (frequency)
+            'Session_duration': 'sum',        # Total session duration
+            'DL_data': 'sum',                 # Total download data
+            'UL_data': 'sum'                  # Total upload data
+        }).rename(columns={'MSISDN': 'xDR_sessions'}).reset_index()
 
-        # Create histograms
-        fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5), squeeze=False)
-        axes = axes.flatten()  # Flatten axes for easy iteration
+        # Calculate the total data volume (DL + UL)
+        user_engagement['Total_data'] = user_engagement['DL_data'] + user_engagement['UL_data']
+
+        # Sort and get top 10 customers for each engagement metric
+        top_10_sessions = user_engagement.sort_values(by='xDR_sessions', ascending=False).head(10)
+        top_10_duration = user_engagement.sort_values(by='Session_duration', ascending=False).head(10)
+        top_10_total_data = user_engagement.sort_values(by='Total_data', ascending=False).head(10)
+
+        # Create a dictionary to store the results
+        results = {
+            'Top 10 Customers by Number of Sessions': top_10_sessions,
+            'Top 10 Customers by Session Duration': top_10_duration,
+            'Top 10 Customers by Total Data (Download + Upload)': top_10_total_data
+        }
+
+        return results
+    def normalize_metrics(self):
         
-        for i, var in enumerate(variables):
-            if var in self.df.columns:
-                sns.histplot(self.df[var].dropna(), kde=False, ax=axes[i], color=colors[i])
-                axes[i].set_title(f'{var} - Histogram')
-                axes[i].set_xlabel(var)
-                axes[i].set_ylabel('Frequency')
-            else:
-                axes[i].set_title(f'{var} - Column Not Found')
-                axes[i].text(0.5, 0.5, 'Column Not Found', ha='center', va='center')
+        metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
+        if not all(metric in self.df.columns for metric in metrics):
+            missing_cols = [metric for metric in metrics if metric not in self.df.columns]
+            raise ValueError("The DataFrame is missing the following columns: " + ", ".join(missing_cols))
         
-        # Hide unused subplots
-        for j in range(i + 1, len(axes)):
-            axes[j].axis('off')
-        
+        scaler = StandardScaler()
+        self.df[metrics] = scaler.fit_transform(self.df[metrics])
+        print("Metrics normalized.")
+        return self.df
+    
+    def perform_kmeans_clustering(self, k=3):
+        self.normalize_metrics()
+        metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
+        kmeans = KMeans(n_clusters=k, random_state=0)
+        self.df['Cluster'] = kmeans.fit_predict(self.df[metrics])
+        print("Cluster centers:\n", kmeans.cluster_centers_)
+        cluster_counts = self.df['Cluster'].value_counts()
+        print("Number of customers in each cluster:\n", cluster_counts)
+
+        return self.df, kmeans
+    def apply_pca(self, n_components=2):
+        """Apply PCA to reduce the dimensionality of the data."""
+        metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
+        pca = PCA(n_components=n_components)
+        principal_components = pca.fit_transform(self.df[metrics])
+        if n_components == 2:
+            self.df[['PC1', 'PC2']] = principal_components
+        elif n_components == 3:
+            self.df[['PC1', 'PC2', 'PC3']] = principal_components
+        return self.df
+
+    def plot_clusters(self):
+        """Plot the clusters in 2D and 3D on subplots."""
+        fig = plt.figure(figsize=(14, 7))
+
+        # 2D plot
+        ax1 = fig.add_subplot(121)
+        scatter1 = ax1.scatter(self.df['Session_duration'], self.df['DL_data'], c=self.df['Cluster'], cmap='viridis')
+        ax1.set_xlabel('Session Duration')
+        ax1.set_ylabel('Download Data')
+        ax1.set_title('Customer Clusters (2D)')
+        fig.colorbar(scatter1, ax=ax1, label='Cluster')
+
+        # 3D plot
+        ax2 = fig.add_subplot(122, projection='3d')
+        scatter2 = ax2.scatter(self.df['Session_duration'], self.df['DL_data'], self.df['UL_data'], c=self.df['Cluster'], cmap='viridis')
+        ax2.set_xlabel('Session Duration')
+        ax2.set_ylabel('Download Data')
+        ax2.set_zlabel('Upload Data')
+        ax2.set_title('Customer Clusters (3D)')
+        fig.colorbar(scatter2, ax=ax2, label='Cluster')
+
         plt.tight_layout()
         plt.show()
-        
-    def bivariate_analysis(self, app_vars, total_dl_col, total_ul_col):
-        """Perform bivariate analysis between each application and total DL+UL data."""
-        results = {}
-        
-        for app_var in app_vars:
-            if app_var in self.df.columns:
-                # Compute Pearson correlation
-                correlation_dl = self.df[[app_var, total_dl_col]].dropna().corr().iloc[0, 1]
-                correlation_ul = self.df[[app_var, total_ul_col]].dropna().corr().iloc[0, 1]
-
-                results[app_var] = {
-                    'Correlation with Total DL (MB)': correlation_dl,
-                    'Correlation with Total UL (MB)': correlation_ul
-                }
-
-                # Scatter plot with regression line
-                plt.figure(figsize=(14, 6))
-
-                plt.subplot(1, 2, 1)
-                sns.regplot(x=app_var, y=total_dl_col, data=self.df, scatter_kws={'s':10}, line_kws={'color':'red'})
-                plt.title(f'{app_var} vs {total_dl_col}')
-                plt.xlabel(app_var)
-                plt.ylabel(total_dl_col)
-
-                plt.subplot(1, 2, 2)
-                sns.regplot(x=app_var, y=total_ul_col, data=self.df, scatter_kws={'s':10}, line_kws={'color':'blue'})
-                plt.title(f'{app_var} vs {total_ul_col}')
-                plt.xlabel(app_var)
-                plt.ylabel(total_ul_col)
-
-                plt.tight_layout()
-                plt.show()
-
-        return pd.DataFrame(results).T
-
-    def compute_correlation_matrix(df, variables):
-        
-        correlation_matrix = df[variables].corr()
-        print("Correlation Matrix:\n", correlation_matrix)
-    
-        # Plot the correlation matrix as a heatmap
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
-        plt.title('Correlation Matrix')
-        plt.show()
-
-    def perform_pca(self, n_components=2, columns=None):
-        """Perform PCA to reduce dimensionality of the dataset."""
-        if columns is not None:
-            numeric_df = self.df[columns].select_dtypes(include=[np.number])
-        else:
-            numeric_df = self.df.select_dtypes(include=[np.number])
-
-        scaler = StandardScaler()
-        scaled_data = scaler.fit_transform(numeric_df)
-
-        pca = PCA(n_components=n_components)
-        principal_components = pca.fit_transform(scaled_data)
-
-        pca_df = pd.DataFrame(data=principal_components, columns=[f'PC{i+1}' for i in range(pca.n_components_)])
-
-        print(f"Explained Variance Ratios: {pca.explained_variance_ratio_}")
-        print(f"Principal Components:\n{pca_df.head()}")
-
-        return pca_df, pca.explained_variance_ratio_
