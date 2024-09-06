@@ -115,7 +115,7 @@ class DataUtils:
 
         ax.set_xlabel('Applications')
         ax.set_ylabel('Total Data (MB)')
-        ax.set_title(title)
+        ax.setTitle(title)
         ax.tick_params(axis='x', rotation=45)
         
     def compute_statistics(self, quantitative_vars):
@@ -201,7 +201,6 @@ class DataUtils:
         return pd.DataFrame(results).T
 
     def compute_correlation_matrix(df, variables):
-        
         correlation_matrix = df[variables].corr()
         print("Correlation Matrix:\n", correlation_matrix)
     
@@ -222,11 +221,16 @@ class DataUtils:
         scaled_data = scaler.fit_transform(numeric_df)
 
         pca = PCA(n_components=n_components)
-        principal_components = pca.fit_transform(scaled_data)
+        pca_data = pca.fit_transform(scaled_data)
 
-        pca_df = pd.DataFrame(data=principal_components, columns=[f'PC{i+1}' for i in range(pca.n_components_)])
+        explained_variance = pca.explained_variance_ratio_
 
-        print(f"Explained Variance Ratios: {pca.explained_variance_ratio_}")
-        print(f"Principal Components:\n{pca_df.head()}")
+        plt.figure(figsize=(10, 6))
+        plt.bar(range(1, n_components + 1), explained_variance, alpha=0.6, color='b', label='Individual Explained Variance')
+        plt.ylabel('Explained variance ratio')
+        plt.xlabel('Principal components')
+        plt.title('PCA Explained Variance')
+        plt.show()
 
-        return pca_df, pca.explained_variance_ratio_
+        return pca_data, explained_variance
+    
