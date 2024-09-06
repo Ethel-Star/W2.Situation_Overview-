@@ -226,3 +226,109 @@ class DataUtils:
 
         plt.tight_layout()
         plt.show()
+    def compute_and_plot_cluster_metrics(self, metrics):
+        """Compute and plot cluster metrics."""
+        # Group by the cluster and compute the metrics
+        cluster_metrics = self.df.groupby('Cluster')[metrics].agg(['min', 'max', 'mean', 'sum'])
+        cluster_metrics = cluster_metrics.reset_index()
+        print(cluster_metrics)
+
+        # Plotting function
+        def plot_metrics(metrics_df, metrics, metric_names):
+            n_metrics = len(metrics)
+            fig, axes = plt.subplots(n_metrics, 4, figsize=(20, n_metrics * 5), sharex=True)
+            fig.suptitle('Cluster Metrics Analysis')
+
+            for i, metric in enumerate(metrics):
+                for j, stat in enumerate(['min', 'max', 'mean', 'sum']):
+                    ax = axes[i, j]
+                    ax.bar(metrics_df['Cluster'], metrics_df[(metric, stat)], color='skyblue')
+                    ax.set_title(f'{metric_names[i]} {stat.capitalize()}')
+                    ax.set_xlabel('Cluster')
+                    ax.set_ylabel('Value')
+        
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            plt.show()
+
+        metric_names = [metric.replace('_', ' ').title() for metric in metrics]
+        # Plot metrics
+        plot_metrics(cluster_metrics, metrics, metric_names)
+    def aggregate_user_traffic(self):
+        # Aggregating user total traffic per application using MSISDN
+        self.application_traffic = self.df.groupby('MSISDN').agg({
+            'Social Media DL (MB)': 'sum',
+            'Google DL (MB)': 'sum',
+            'Netflix DL (MB)': 'sum',
+        }).reset_index()
+        print("Aggregated Data (first 5 rows):\n", self.application_traffic.head())  # Debug
+
+    def top_engaged_users(self, top_n=10):
+        # Convert MSISDN to string to handle large numbers
+        self.application_traffic['MSISDN'] = self.application_traffic['MSISDN'].astype(str)
+
+        # Derive the top 10 most engaged users (MSISDN) per application
+        self.top_10_users_per_app = {}
+        for app in ['Social Media DL (MB)', 'Google DL (MB)', 'Netflix DL (MB)']:
+            self.top_10_users_per_app[app] = self.application_traffic.nlargest(top_n, app)
+            print(f"Top 10 users for {app} (first 5 rows):\n", self.top_10_users_per_app[app].head())  # Debug
+
+    def plot_top_applications(self):
+        # Plotting top 3 most used applications
+        top_apps = ['Social Media DL (MB)', 'Google DL (MB)', 'Netflix DL (MB)']
+        fig, axes = plt.subplots(1, 3, figsize=(20, 5), sharey=True)
+
+        for i, app in enumerate(top_apps):
+            data = self.top_10_users_per_app[app]
+            print(f"Plotting data for {app}:\n", data)  # Debug
+
+            if len(data) > 0:  # Ensure there are users to plot
+                axes[i].bar(data['MSISDN'], data[app], color='skyblue')
+                axes[i].set_title(app)
+                axes[i].set_xlabel('MSISDN')
+                axes[i].set_ylabel('Total Traffic (MB)')
+                axes[i].tick_params(axis='x', rotation=90)
+            else:
+                axes[i].set_title(f"No Data for {app}")
+
+        plt.tight_layout()
+        plt.show()
+    def cluster_analysis(self, columns_to_scale, max_k=10, n_clusters=None):
+
+        # Preprocess the data
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(self.df[columns_to_scale])
+        
+        if n_clusters is None:
+            # Find optimal k
+            k_values = range(1, max_k + 1)
+            inertia = []
+            
+            for k in k_values:
+                kmeans = KMeans(n_clusters=k, random_state=42)
+                kmeans.fit(scaled_data)
+                inertia.append(kmeans.inertia_)
+            
+            plt.figure(figsize=(8, 6))
+            plt.plot(k_values, inertia, marker='o')
+            plt.xlabel('Number of Clusters (k)')
+            plt.ylabel('Inertia')
+            plt.title('Elbow Method for Optimal k')
+            plt.grid(True)
+            plt.show()
+
+            # Determine the optimal k based on the elbow method
+            optimal_k = int(input("Enter the optimal number of clusters (k): "))
+        else:
+            optimal_k = n_clusters
+        
+        # Apply k-means clustering
+        kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+        clusters = kmeans.fit_predict(scaled_data)
+        
+        # Add cluster labels to the DataFrame
+        self.df['Cluster'] = clusters
+        
+        # Summarize cluster statistics
+        cluster_summary = self.df.groupby('Cluster')[columns_to_scale].mean()
+        
+        return self.df, cluster_summary, optimal_k
