@@ -115,7 +115,7 @@ class DataUtils:
 
         ax.set_xlabel('Applications')
         ax.set_ylabel('Total Data (MB)')
-        ax.setTitle(title)
+        ax.set_title(title)
         ax.tick_params(axis='x', rotation=45)
         
     def compute_statistics(self, quantitative_vars):
@@ -137,7 +137,7 @@ class DataUtils:
         return stats_summary
 
     def plot_univariate_analysis(self, variables):
-        """Create and display histograms for specified quantitative variables."""
+  
         num_vars = len(variables)
         num_cols = 4
         num_rows = int(np.ceil(num_vars / num_cols))  # Calculate number of rows needed
@@ -166,7 +166,7 @@ class DataUtils:
         plt.show()
         
     def bivariate_analysis(self, app_vars, total_dl_col, total_ul_col):
-        """Perform bivariate analysis between each application and total DL+UL data."""
+        
         results = {}
         
         for app_var in app_vars:
@@ -224,13 +224,6 @@ class DataUtils:
         pca_data = pca.fit_transform(scaled_data)
 
         explained_variance = pca.explained_variance_ratio_
-
-        plt.figure(figsize=(10, 6))
-        plt.bar(range(1, n_components + 1), explained_variance, alpha=0.6, color='b', label='Individual Explained Variance')
-        plt.ylabel('Explained variance ratio')
-        plt.xlabel('Principal components')
-        plt.title('PCA Explained Variance')
-        plt.show()
 
         return pca_data, explained_variance
     
