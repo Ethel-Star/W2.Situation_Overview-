@@ -136,14 +136,6 @@ class DataUtils:
         
         return stats_summary
     
-    
-    
-    
-    
-    
-    
-    
-
     def analyze_customer_engagement(self):
         """Analyze customer engagement metrics and return top 10 customers by various metrics."""
         self.df.rename(columns={
@@ -289,7 +281,7 @@ class DataUtils:
             print(f"Plotting data for {app}:\n", data)  # Debug
 
             if len(data) > 0:  # Ensure there are users to plot
-                axes[i].bar(data['MSISDN'], data[app], color='skyblue')
+                axes[i].bar(data['MSISDN'], data[app], color='blue')
                 axes[i].set_title(app)
                 axes[i].set_xlabel('MSISDN')
                 axes[i].set_ylabel('Total Traffic (MB)')
