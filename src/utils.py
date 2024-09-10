@@ -6,9 +6,15 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from mpl_toolkits.mplot3d import Axes3D
 class DataUtils:
     def __init__(self, df):
         self.df = df
+        scaler = StandardScaler()
+        self.scaler = scaler
+        self.numeric_cols = None
+        self.scaled_data = None
+        self.kmeans = None
 
     def check_missing_values(self):
         """Checks and summarizes missing values in the DataFrame."""
@@ -398,31 +404,228 @@ class DataUtils:
                 plt.show()
 
         return pd.DataFrame(results).T
+         # Experience_Analysis 
+    def clean_data(self):
+        """Clean the dataset by replacing missing values with the mean/mode and treating outliers using Z-score."""
+        numeric_cols = self.df.select_dtypes(include=np.number).columns
+        categorical_cols = self.df.select_dtypes(include='object').columns
+        self.df[numeric_cols] = self.df[numeric_cols].apply(lambda x: x.fillna(x.mean()))
+        for col in categorical_cols:
+            mode_value = self.df[col].mode()[0]
+            self.df[col] = self.df[col].fillna(mode_value)
+        for col in numeric_cols:
+            # Compute Z-scores
+            z_scores = np.abs(stats.zscore(self.df[col]))
 
-    def compute_correlation_matrix(df, variables):
-        correlation_matrix = df[variables].corr()
-        print("Correlation Matrix:\n", correlation_matrix)
-    
-        # Plot the correlation matrix as a heatmap
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
-        plt.title('Correlation Matrix')
+            # Define outlier threshold
+            outlier_threshold = 3
+
+            # Replace outliers with the mean of the respective column
+            self.df[col] = np.where(z_scores > outlier_threshold, self.df[col].mean(), self.df[col])
+
+        return self.df
+
+    def aggregate_customer_metrics(self):
+        """Aggregate required metrics per customer (MSISDN/Number)."""
+        # List of columns to aggregate
+        agg_columns = {
+            'TCP DL Retrans. Vol (MB)': 'mean',
+            'TCP UL Retrans. Vol (MB)': 'mean',
+            'Avg RTT DL (ms)': 'mean',
+            'Avg RTT UL (ms)': 'mean',
+            'Avg Bearer TP DL (kbps)': 'mean',
+            'Avg Bearer TP UL (kbps)': 'mean',
+            'Handset Type': lambda x: x.mode()[0]  # Aggregating the most common Handset Type
+        }
+
+        # Aggregate by MSISDN (customer)
+        aggregated_df = self.df.groupby('MSISDN/Number').agg(agg_columns).reset_index()
+
+        return aggregated_df
+
+    def summary_statistics(self, columns):
+        """Print summary statistics for the given columns in the DataFrame."""
+        return self.df[columns].describe()
+    def compute_top_bottom_frequent(self, column_name, top_n=10):
+        """Compute and list top, bottom, and most frequent values for a given column."""
+        top_values = self.df[column_name].nlargest(top_n).tolist()
+        bottom_values = self.df[column_name].nsmallest(top_n).tolist()
+        frequent_values = self.df[column_name].mode().tolist()
+
+        return {
+            'Top N Values': top_values,
+            'Bottom N Values': bottom_values,
+            'Most Frequent Values': frequent_values
+        }
+
+    def plot_top_values(self, ax, column_name, top_n=10):
+        if column_name in self.df.columns:
+            self.df[column_name] = pd.to_numeric(self.df[column_name], errors='coerce')
+            self.df = self.df.dropna(subset=[column_name])
+            
+            top_values = self.df[column_name].nlargest(top_n)
+            
+            bars = ax.bar(top_values.index.astype(str), top_values.values)
+            ax.set_title(f'Top {top_n} {column_name}')
+            ax.set_xlabel('Index')
+            ax.set_ylabel('Value')
+
+            for bar in bars:
+                yval = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2, yval, round(yval, 2), va='bottom')
+            ax.tick_params(axis='x', rotation=45)
+        else:
+            ax.set_title(f"Column '{column_name}' not found")
+
+    def plot_bottom_values(self, ax, column_name, top_n=10):
+        if column_name in self.df.columns:
+            self.df[column_name] = pd.to_numeric(self.df[column_name], errors='coerce')
+            self.df = self.df.dropna(subset=[column_name])
+            
+            bottom_values = self.df[column_name].nsmallest(top_n)
+            
+            bars = ax.bar(bottom_values.index.astype(str), bottom_values.values)
+            ax.set_title(f'Bottom {top_n} {column_name}')
+            ax.set_xlabel('Index')
+            ax.set_ylabel('Value')
+
+            for bar in bars:
+                yval = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2, yval, round(yval, 2), va='bottom')
+            ax.tick_params(axis='x', rotation=45)
+        else:
+            ax.set_title(f"Column '{column_name}' not found")
+
+    def plot_most_frequent(self, ax, column_name, top_n=10):
+        if column_name in self.df.columns:
+            self.df[column_name] = pd.to_numeric(self.df[column_name], errors='coerce')
+            self.df = self.df.dropna(subset=[column_name])
+            
+            most_frequent = self.df[column_name].value_counts().head(top_n)
+            
+            bars = ax.bar(most_frequent.index.astype(str), most_frequent.values)
+            ax.set_title(f'Most Frequent {column_name}')
+            ax.set_xlabel('Value')
+            ax.set_ylabel('Frequency')
+
+            for bar in bars:
+                yval = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2, yval, round(yval, 2), va='bottom')
+            ax.tick_params(axis='x', rotation=45)
+        else:
+            ax.set_title(f"Column '{column_name}' not found")
+
+    def plot_all_statistics(self):
+        fig, axs = plt.subplots(3, 3, figsize=(18, 15))
+        fig.tight_layout(pad=5.0)
+
+        self.plot_top_values(axs[0, 0], 'TCP DL Retrans. Vol (MB)')
+        self.plot_bottom_values(axs[0, 1], 'TCP DL Retrans. Vol (MB)')
+        self.plot_most_frequent(axs[0, 2], 'TCP DL Retrans. Vol (MB)')
+
+        self.plot_top_values(axs[1, 0], 'Avg RTT DL (ms)')
+        self.plot_bottom_values(axs[1, 1], 'Avg RTT DL (ms)')
+        self.plot_most_frequent(axs[1, 2], 'Avg RTT DL (ms)')
+
+        self.plot_top_values(axs[2, 0], 'Avg Bearer TP DL (kbps)')
+        self.plot_bottom_values(axs[2, 1], 'Avg Bearer TP DL (kbps)')
+        self.plot_most_frequent(axs[2, 2], 'Avg Bearer TP DL (kbps)')
+
         plt.show()
 
-    def perform_pca(self, n_components=2, columns=None):
-        """Perform PCA to reduce dimensionality of the dataset."""
-        if columns is not None:
-            numeric_df = self.df[columns].select_dtypes(include=[np.number])
+    def report_throughput_distribution(self):
+        if 'Avg Bearer TP DL (kbps)' in self.df.columns and 'Handset Type' in self.df.columns:
+            self.df['Avg Bearer TP DL (kbps)'] = pd.to_numeric(self.df['Avg Bearer TP DL (kbps)'], errors='coerce')
+            self.df['Handset Type'] = self.df['Handset Type'].astype(str)
+            self.df = self.df.dropna(subset=['Avg Bearer TP DL (kbps)', 'Handset Type'])
+            
+            throughput_distribution = self.df.groupby('Handset Type')['Avg Bearer TP DL (kbps)'].mean().sort_values()
+            
+            return throughput_distribution
         else:
-            numeric_df = self.df.select_dtypes(include=[np.number])
+            return "Columns not found in the dataset."
 
-        scaler = StandardScaler()
-        scaled_data = scaler.fit_transform(numeric_df)
+    def report_tcp_retransmission_distribution(self):
+        if 'TCP DL Retrans. Vol (MB)' in self.df.columns and 'Handset Type' in self.df.columns:
+            self.df['TCP DL Retrans. Vol (MB)'] = pd.to_numeric(self.df['TCP DL Retrans. Vol (MB)'], errors='coerce')
+            self.df['Handset Type'] = self.df['Handset Type'].astype(str)
+            self.df = self.df.dropna(subset=['TCP DL Retrans. Vol (MB)', 'Handset Type'])
+            
+            tcp_retransmission_distribution = self.df.groupby('Handset Type')['TCP DL Retrans. Vol (MB)'].mean().sort_values()
+            
+            return tcp_retransmission_distribution
+        else:
+            return "Columns not found in the dataset."
+        
+    def scale_numeric_data(self):
+        """Scale numeric columns in the DataFrame."""
+        # Identify numeric columns
+        self.numeric_cols = self.df.select_dtypes(include=np.number).columns
+        # Scale the numeric data
+        self.scaled_data = self.scaler.fit_transform(self.df[self.numeric_cols])
 
-        pca = PCA(n_components=n_components)
-        pca_data = pca.fit_transform(scaled_data)
+    def apply_kmeans_clustering(self, n_clusters=3):
+        """Perform KMeans clustering and add cluster labels to the DataFrame."""
+        self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        # Perform clustering on scaled data
+        clusters = self.kmeans.fit_predict(self.scaled_data)
+        # Add cluster labels to the DataFrame
+        self.df['Cluster'] = clusters
 
-        explained_variance = pca.explained_variance_ratio_
+    def get_cluster_centers(self):
+        """Compute and return the cluster centers in the original scale."""
+        # Ensure cluster centers are transformed back to the original scale
+        cluster_centers = self.scaler.inverse_transform(self.kmeans.cluster_centers_)
+        # Create a DataFrame for cluster centers
+        cluster_centers_df = pd.DataFrame(cluster_centers, columns=self.numeric_cols,
+                                          index=[f'Cluster {i+1}' for i in range(self.kmeans.n_clusters)])
+        return cluster_centers_df
 
-        return pca_data, explained_variance
-    
+    def describe_clusters(self):
+        """Print the description of each cluster."""
+        if 'Cluster' not in self.df.columns:
+            raise ValueError("Cluster labels not found. Please run apply_kmeans_clustering() first.")
+
+        for i in range(self.kmeans.n_clusters):
+            cluster_data = self.df[self.df['Cluster'] == i]
+            print(f"\nCluster {i+1} Description:")
+            print(f"Average Throughput (kbps): {cluster_data['Avg Bearer TP DL (kbps)'].mean()}")
+            print(f"Average TCP Retransmission (MB): {cluster_data['TCP DL Retrans. Vol (MB)'].mean()}")
+            print(f"Average RTT (ms): {cluster_data['Avg RTT DL (ms)'].mean()}")
+
+    def visualize_clusters(self):
+        """Visualize clusters in 2D and 3D plots."""
+        if 'Cluster' not in self.df.columns:
+            raise ValueError("Cluster labels not found. Please run apply_kmeans_clustering() first.")
+        
+        # Define numeric columns for plotting
+        numeric_cols = ['Avg Bearer TP DL (kbps)', 'TCP DL Retrans. Vol (MB)', 'Avg RTT DL (ms)']
+        
+        # 2D and 3D plotting for each cluster
+        for cluster in self.df['Cluster'].unique():
+            cluster_data = self.df[self.df['Cluster'] == cluster]
+            
+            # 2D Plot
+            plt.figure(figsize=(14, 7))
+            plt.subplot(1, 2, 1)
+            plt.scatter(cluster_data['Avg Bearer TP DL (kbps)'], cluster_data['TCP DL Retrans. Vol (MB)'], 
+                        c=cluster_data['Cluster'], cmap='viridis', label=f'Cluster {cluster+1}')
+            plt.xlabel('Average Throughput (kbps)')
+            plt.ylabel('TCP DL Retransmission (MB)')
+            plt.title(f'2D Cluster Visualization - Cluster {cluster+1}')
+            plt.legend()
+            plt.colorbar(label='Cluster')
+            
+            # 3D Plot
+            ax = plt.subplot(1, 2, 2, projection='3d')
+            scatter = ax.scatter(cluster_data['Avg Bearer TP DL (kbps)'], cluster_data['TCP DL Retrans. Vol (MB)'], 
+                                 cluster_data['Avg RTT DL (ms)'], c=cluster_data['Cluster'], cmap='viridis', label=f'Cluster {cluster+1}')
+            ax.set_xlabel('Average Throughput (kbps)')
+            ax.set_ylabel('TCP DL Retransmission (MB)')
+            ax.set_zlabel('Average RTT (ms)')
+            ax.set_title(f'3D Cluster Visualization - Cluster {cluster+1}')
+            plt.legend()
+            plt.colorbar(scatter, label='Cluster')
+
+            plt.tight_layout()
+            plt.show()
