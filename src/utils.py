@@ -10,6 +10,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
+import pandas as pd
+from sqlalchemy import create_engine
 class DataUtils:
     def __init__(self, df):
         self.df = df
@@ -719,3 +721,40 @@ class DataUtils:
         plt.ylabel('Predicted Satisfaction Score')
         plt.title('Actual vs Predicted Satisfaction Score')
         plt.show()
+        
+    def run_kmeans_clustering(self, n_clusters=2):
+        """Runs K-means clustering on Engagement_score and Experience_score."""
+        df_kmeans = self.df[['Engagement_score', 'Experience_score']]
+        
+        # Define and fit the K-means model
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        self.df['Cluster'] = kmeans.fit_predict(df_kmeans)
+        
+        # Return the cluster centers for analysis
+        return kmeans.cluster_centers_
+
+    def visualize_clusters(self):
+        """Visualize the clusters using a scatter plot."""
+        plt.figure(figsize=(10, 6))
+        sns.scatterplot(x='Engagement_score', y='Experience_score', hue='Cluster', data=self.df, palette='viridis', s=100)
+        plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s=300, c='red', label='Centroids')
+        plt.title('K-means Clustering (k=2)')
+        plt.xlabel('Engagement Score')
+        plt.ylabel('Experience Score')
+        plt.legend()
+        plt.show()
+        
+    def export_to_csv(self, output_path):
+        """Exports the DataFrame with clusters to a CSV file."""
+        self.df.to_csv(output_path, index=False)
+        print(f"Data exported to {output_path}")
+
+    def export_to_postgresql(self, db_name, db_user, db_password, db_host, db_port, table_name):
+        """Exports the DataFrame to a PostgreSQL database."""
+        # Create a connection engine
+        engine = create_engine(f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}')
+        
+        # Export DataFrame to PostgreSQL
+        self.df.to_sql(table_name, engine, if_exists='replace', index=False)
+        
+        print(f"Data successfully exported to PostgreSQL in the {table_name} table within the {db_name} database.")
