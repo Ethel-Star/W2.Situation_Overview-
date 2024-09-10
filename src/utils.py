@@ -7,6 +7,9 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
 class DataUtils:
     def __init__(self, df):
         self.df = df
@@ -15,6 +18,7 @@ class DataUtils:
         self.numeric_cols = None
         self.scaled_data = None
         self.kmeans = None
+       # self.df = pd.read_csv(r'E:\2017.Study\Tenx\Week-2\Data\your_data_file.csv')
 
     def check_missing_values(self):
         """Checks and summarizes missing values in the DataFrame."""
@@ -673,4 +677,45 @@ class DataUtils:
         self.df['Experience_score'] = np.linalg.norm(self.scaled_data - worst_cluster_centroid, axis=1)
         
         print("Experience scores calculated.")
-        return self.df[['Cluster', 'Experience_score']]
+        return self.df
+    
+    
+
+    def preprocess_data(self):
+        # Assuming the satisfaction score is already calculated in your merged DataFrame
+        pass  # Skip as no further preprocessing is needed
+
+    def train_and_predict_model(self):
+        # Prepare data for modeling
+        X = self.df[['Engagement_score', 'Experience_score']]
+        y = self.df['Satisfaction_score']
+        
+        # Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Train the regression model
+        self.model = LinearRegression()
+        self.model.fit(X_train, y_train)
+        
+        # Make predictions
+        predictions = self.model.predict(X_test)
+        
+        # Create a DataFrame with predictions and actual values
+        predictions_df = pd.DataFrame({
+            'MSISDN': self.df['MSISDN'].iloc[X_test.index],  # Track MSISDN
+            'Actual': y_test,
+            'Predicted': predictions
+        })
+        
+        return self.model, predictions_df
+
+    def plot_predictions_vs_actual(self, predictions_df):
+        plt.figure(figsize=(10, 6))
+        plt.scatter(predictions_df['Actual'], predictions_df['Predicted'], alpha=0.5)
+        plt.plot([min(predictions_df['Actual']), max(predictions_df['Actual'])], 
+                 [min(predictions_df['Actual']), max(predictions_df['Actual'])], 
+                 color='red', linestyle='--')
+        plt.xlabel('Actual Satisfaction Score')
+        plt.ylabel('Predicted Satisfaction Score')
+        plt.title('Actual vs Predicted Satisfaction Score')
+        plt.show()
