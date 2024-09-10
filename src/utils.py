@@ -190,13 +190,16 @@ class DataUtils:
     def perform_kmeans_clustering(self, k=3):
         self.normalize_metrics()
         metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
-        kmeans = KMeans(n_clusters=k, random_state=0)
-        self.df['Cluster'] = kmeans.fit_predict(self.df[metrics])
-        print("Cluster centers:\n", kmeans.cluster_centers_)
-        cluster_counts = self.df['Cluster'].value_counts()
-        print("Number of customers in each cluster:\n", cluster_counts)
 
-        return self.df, kmeans
+        # Correct KMeans instantiation
+        self.kmeans = KMeans(n_clusters=k, random_state=0)
+        self.df['Cluster'] = self.kmeans.fit_predict(self.df[metrics])
+
+        print("Cluster centers:\n", self.kmeans.cluster_centers_)
+        print("Number of customers in each cluster:\n", self.df['Cluster'].value_counts())
+
+        return self.df, self.kmeans
+    
     def apply_pca(self, n_components=2):
         """Apply PCA to reduce the dimensionality of the data."""
         metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
@@ -405,6 +408,11 @@ class DataUtils:
 
         return pd.DataFrame(results).T
          # Experience_Analysis 
+         
+         
+         
+         
+         
     def clean_data(self):
         """Clean the dataset by replacing missing values with the mean/mode and treating outliers using Z-score."""
         numeric_cols = self.df.select_dtypes(include=np.number).columns
@@ -559,24 +567,29 @@ class DataUtils:
         
     def scale_numeric_data(self):
         """Scale numeric columns in the DataFrame."""
-        # Identify numeric columns
         self.numeric_cols = self.df.select_dtypes(include=np.number).columns
-        # Scale the numeric data
+        if self.df[self.numeric_cols].isnull().any().any():
+            raise ValueError("Numeric columns contain missing values. Please handle missing values before scaling.")
         self.scaled_data = self.scaler.fit_transform(self.df[self.numeric_cols])
+        print("Scaled Data Shape:", self.scaled_data.shape)
+        print("Scaled Data Sample:", self.scaled_data[:5])  # Print the first 5 rows
 
     def apply_kmeans_clustering(self, n_clusters=3):
         """Perform KMeans clustering and add cluster labels to the DataFrame."""
+        if self.scaled_data is None:
+            raise ValueError("Scaled data is not available. Please run scale_numeric_data() first.")
+            
+        if not isinstance(self.scaled_data, (pd.DataFrame, np.ndarray)):
+            raise TypeError("self.scaled_data must be a pandas DataFrame or numpy ndarray.")
+        
+        # Perform KMeans clustering
         self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        # Perform clustering on scaled data
         clusters = self.kmeans.fit_predict(self.scaled_data)
-        # Add cluster labels to the DataFrame
         self.df['Cluster'] = clusters
 
     def get_cluster_centers(self):
         """Compute and return the cluster centers in the original scale."""
-        # Ensure cluster centers are transformed back to the original scale
         cluster_centers = self.scaler.inverse_transform(self.kmeans.cluster_centers_)
-        # Create a DataFrame for cluster centers
         cluster_centers_df = pd.DataFrame(cluster_centers, columns=self.numeric_cols,
                                           index=[f'Cluster {i+1}' for i in range(self.kmeans.n_clusters)])
         return cluster_centers_df
@@ -597,11 +610,7 @@ class DataUtils:
         """Visualize clusters in 2D and 3D plots."""
         if 'Cluster' not in self.df.columns:
             raise ValueError("Cluster labels not found. Please run apply_kmeans_clustering() first.")
-        
-        # Define numeric columns for plotting
         numeric_cols = ['Avg Bearer TP DL (kbps)', 'TCP DL Retrans. Vol (MB)', 'Avg RTT DL (ms)']
-        
-        # 2D and 3D plotting for each cluster
         for cluster in self.df['Cluster'].unique():
             cluster_data = self.df[self.df['Cluster'] == cluster]
             
@@ -615,7 +624,6 @@ class DataUtils:
             plt.title(f'2D Cluster Visualization - Cluster {cluster+1}')
             plt.legend()
             plt.colorbar(label='Cluster')
-            
             # 3D Plot
             ax = plt.subplot(1, 2, 2, projection='3d')
             scatter = ax.scatter(cluster_data['Avg Bearer TP DL (kbps)'], cluster_data['TCP DL Retrans. Vol (MB)'], 
@@ -629,3 +637,40 @@ class DataUtils:
 
             plt.tight_layout()
             plt.show()
+            
+# User satisfaction Analysis 
+
+    def calculate_engagement_scores(self):
+        if self.kmeans is None:
+            raise ValueError("K-means clustering has not been performed yet.")
+        least_engaged_cluster = self.df['Cluster'].value_counts().idxmin()
+        print(f"Least engaged cluster: {least_engaged_cluster}")
+        metrics = ['Session_duration', 'DL_data', 'UL_data', 'Total DL (MB)', 'Total UL (MB)']
+        least_engaged_centroid = self.kmeans.cluster_centers_[least_engaged_cluster]
+        print(f"Centroid of least engaged cluster: {least_engaged_centroid}")
+        user_metrics = self.df[metrics].values
+        engagement_scores = np.linalg.norm(user_metrics - least_engaged_centroid, axis=1)
+        self.df['Engagement_score'] = engagement_scores
+        return self.df
+
+    def calculate_experience_scores(self):
+        """Calculate experience score for each user based on distance to the worst experience cluster."""
+        if self.kmeans is None:
+            raise ValueError("KMeans model is not available. Please run apply_kmeans_clustering() first.")
+            
+        cluster_centers_df = self.get_cluster_centers()
+        
+        # Find the index of the cluster with the worst experience (highest RTT)
+        worst_cluster_idx = cluster_centers_df['Avg RTT DL (ms)'].idxmax()
+        
+        # Convert the cluster index from the cluster center DataFrame to integer
+        worst_cluster_num = int(worst_cluster_idx.split()[-1]) - 1  # Assuming cluster labels are like 'Cluster 1', 'Cluster 2', etc.
+        
+        # Get the centroid of the worst experience cluster
+        worst_cluster_centroid = self.kmeans.cluster_centers_[worst_cluster_num]
+        
+        # Calculate the Euclidean distance between each user's data point and the worst cluster centroid
+        self.df['Experience_score'] = np.linalg.norm(self.scaled_data - worst_cluster_centroid, axis=1)
+        
+        print("Experience scores calculated.")
+        return self.df[['Cluster', 'Experience_score']]
